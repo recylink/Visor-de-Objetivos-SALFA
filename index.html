@@ -1716,21 +1716,14 @@ function pctKpiCostoIngresoSucursal_(emp, hastaMes){
   return evaluables===0?null:Math.round(ok/evaluables*100);
 }
 
-// Acumulado de Valorización de esta sucursal hasta un mes dado (última cifra
-// real de la fila "% Acumulado" que no sea posterior a hastaMes).
-function valorizacionAcumuladaSucursal_(emp, hastaMes){
-  const vd = VAL_DATA[emp.id];
-  if(!vd) return { meta:null, avance:null };
-  const meta = vd.meta?.[hastaMes] ?? null;
-  const ms = MESES.slice(0, MESES.indexOf(hastaMes)+1).filter(m=>vd.acumulado?.[m]!=null);
-  const u = ms[ms.length-1];
-  const avance = u!==undefined ? vd.acumulado[u] : null;
-  return { meta, avance };
-}
-
-// Conteo cumplidos/total de los 4 objetivos reales de "Objetivos 2026"
-// (Trazabilidad, Valorización, SINADER, KPI costo/ingreso) PARA ESTA
-// SUCURSAL, todos calculados en vivo — usado para el badge de la pestaña.
+// Conteo cumplidos/total de los objetivos reales de "Objetivos 2026" PARA
+// ESTA SUCURSAL — usado para el badge de la pestaña. Trazabilidad/SINADER/
+// KPI costo se calculan en vivo (mismo criterio que renderObjetivos()); el
+// resto (ej. "Asegurar una correcta segregación de residuos") no tiene
+// Valorización entre los objetivos de Salfa, así que en vez de ese chequeo
+// hardcodeado se cuentan genéricamente el resto de emp.objetivos (mismo
+// filtro que renderObjetivos() usa para no duplicar Trazabilidad/SINADER/
+// KPI costo, que ya se cuentan aparte).
 function contarObjetivosCumplidos_(emp){
   if(!mesActual) return {ok:0, total:0};
   const items = [];
@@ -1738,14 +1731,15 @@ function contarObjetivosCumplidos_(emp){
   const pTraz = pctTrazabilidadAnual(emp, mesActual);
   items.push(pTraz!==null && pTraz>=100);
 
-  const { meta: metaVal, avance: avanceVal } = valorizacionAcumuladaSucursal_(emp, mesActual);
-  items.push(metaVal!==null && avanceVal!==null && avanceVal>=metaVal);
-
   const pSinader = pctSinaderSucursal_(emp, mesActual);
   items.push(pSinader!==null && pSinader>=100);
 
   const pKpiCosto = pctKpiCostoIngresoSucursal_(emp, mesActual);
   items.push(pKpiCosto!==null && pKpiCosto>=100);
+
+  emp.objetivos
+    .filter(o=>!/trazabilidad|sinader|kpi.*costo|costo.*ingreso|valorizaci/i.test(o.texto))
+    .forEach(o=>{ items.push(o.ok === true); });
 
   return { ok: items.filter(Boolean).length, total: items.length };
 }
@@ -1762,12 +1756,6 @@ function renderObjetivos(emp){
   const okTraz = avanceTraz!==null && avanceTraz>=100;
   const colTraz = avanceTraz===null?'var(--g300)':okTraz?'#039855':(avanceTraz>=70?'#F79009':'#F04438');
   const pctBarraTraz = avanceTraz===null?0:Math.min(avanceTraz,100);
-
-  // Valorización — DE ESTA SUCURSAL, contra su propia meta (puede variar mes a mes)
-  const { meta: metaVal, avance: avanceVal } = valorizacionAcumuladaSucursal_(emp, mesActual);
-  const okVal = metaVal!==null && avanceVal!==null && avanceVal>=metaVal;
-  const colVal = avanceVal===null?'var(--g300)':(metaVal===null?colorPct(avanceVal):(okVal?'#039855':(avanceVal>=metaVal*0.7?'#F79009':'#F04438')));
-  const pctBarraVal = avanceVal===null?0:(metaVal?Math.min(Math.round(avanceVal/metaVal*100),100):Math.min(avanceVal,100));
 
   // Declarar mensualmente en SINADER — DE ESTA SUCURSAL
   const pSinader = pctSinaderSucursal_(emp, mesActual);
@@ -1806,26 +1794,7 @@ function renderObjetivos(emp){
 
         <div class="obj-item">
           <div class="obj-text">
-            ${metaVal!==null?`${metaVal}% Valorización`:'Meta Valorización (sin definir)'}
-            <span style="font-size:10px;font-weight:500;color:var(--g400);margin-left:6px;">${rango}</span>
-          </div>
-          <div class="obj-prog">
-            <div class="prog-bg" style="flex:1">
-              <div class="prog-fill" style="width:${pctBarraVal}%;background:${colVal}"></div>
-            </div>
-            <span class="prog-lbl" style="color:${colVal};min-width:42px;text-align:right">${avanceVal===null?"—":avanceVal+"%"}</span>
-            ${avanceVal===null||metaVal===null?"":okVal?`<span class="badge b-ok">✓</span>`:`<span class="badge b-falta">✗</span>`}
-          </div>
-          <div style="font-size:10px;color:var(--g400);margin-top:5px;">
-            ${metaVal===null
-              ? "Sin meta de valorización definida para esta sucursal"
-              : `Acumulado real vs. meta de ${metaVal}%`}
-          </div>
-        </div>
-
-        <div class="obj-item">
-          <div class="obj-text">
-            Declarar mensualmente en SINADER
+            ${(emp.objetivos.find(o=>/sinader/i.test(o.texto))||{}).texto || "Declarar mensualmente en SINADER"}
             <span style="font-size:10px;font-weight:500;color:var(--g400);margin-left:6px;">${rango}</span>
           </div>
           <div class="obj-prog">
@@ -1840,7 +1809,7 @@ function renderObjetivos(emp){
 
         <div class="obj-item">
           <div class="obj-text">
-            KPI costo e ingreso
+            ${(emp.objetivos.find(o=>/kpi.*costo|costo.*ingreso/i.test(o.texto))||{}).texto || "KPI costo e ingreso"}
             <span style="font-size:10px;font-weight:500;color:var(--g400);margin-left:6px;">${rango}</span>
           </div>
           <div class="obj-prog">
@@ -1852,6 +1821,26 @@ function renderObjetivos(emp){
           </div>
           <div style="font-size:10px;color:var(--g400);margin-top:5px;">% de meses con costo o ingreso registrado en al menos un residuo de esta sucursal (ver pestaña Costo-Ingreso)</div>
         </div>
+
+        ${emp.objetivos.filter(o=>!/trazabilidad|sinader|kpi.*costo|costo.*ingreso|valorizaci/i.test(o.texto)).map(o=>{
+          const av = o.avance;
+          const pctBarra = av===null||av===undefined?0:Math.min(av,100);
+          const col = av===null||av===undefined?'var(--g300)':(o.ok===true?'#039855':o.ok===false?'#F04438':colorPct(av));
+          return `<div class="obj-item">
+            <div class="obj-text">
+              ${o.texto}
+              <span style="font-size:10px;font-weight:500;color:var(--g400);margin-left:6px;">${rango}</span>
+            </div>
+            <div class="obj-prog">
+              <div class="prog-bg" style="flex:1">
+                <div class="prog-fill" style="width:${pctBarra}%;background:${col}"></div>
+              </div>
+              <span class="prog-lbl" style="color:${col};min-width:42px;text-align:right">${(av===null||av===undefined)?"—":av+"%"}</span>
+              ${o.ok===true?`<span class="badge b-ok">✓</span>`:o.ok===false?`<span class="badge b-falta">✗</span>`:""}
+            </div>
+            <div style="font-size:10px;color:var(--g400);margin-top:5px;">${o.detalle||''}</div>
+          </div>`;
+        }).join("")}
       </div>
     </div>`;
 }
@@ -2400,30 +2389,38 @@ function imprimirInformeCompleto(){
       +'<th style="padding:5px;text-align:center;border-bottom:1px solid #E4E7EC;">Avance</th>'
       +'<th style="padding:5px;text-align:center;border-bottom:1px solid #E4E7EC;">Estado</th>'
       +'</tr></thead><tbody>'
-      // Los 4 objetivos reales de esta sucursal, todos calculados en vivo con
-      // la misma lógica que la pestaña "🎯 Objetivos" (buildPayload_ no manda
-      // SINADER/KPI armados, y la meta de Valorización solo viene embebida en
-      // el texto de emp.objetivos, no como campo numérico separado).
+      // Trazabilidad/SINADER/KPI costo calculados en vivo con la misma
+      // lógica que la pestaña "🎯 Objetivos"; el resto (ej. "Asegurar una
+      // correcta segregación de residuos") sale directo de emp.objetivos
+      // (Salfa no tiene Valorización entre sus objetivos reales, así que no
+      // se arma esa fila — ver renderObjetivos()).
       +(()=>{
         const pTraz = pctTrazabilidadAnual(emp, mesActual);
-        const { meta: metaVal, avance: avanceVal } = valorizacionAcumuladaSucursal_(emp, mesActual);
         const pSinader = pctSinaderSucursal_(emp, mesActual);
         const pKpiCosto = pctKpiCostoIngresoSucursal_(emp, mesActual);
 
         const filas = [
-          ['100% Trazabilidad', pTraz, 100],
-          [metaVal!==null?`${metaVal}% Valorización`:'Meta Valorización (sin definir)', avanceVal, metaVal],
-          ['Declarar mensualmente en SINADER', pSinader, 100],
-          ['KPI costo e ingreso', pKpiCosto, 100]
+          ['100% Trazabilidad', pTraz, 100, null],
+          [(emp.objetivos.find(o=>/sinader/i.test(o.texto))||{}).texto || 'Declarar mensualmente en SINADER', pSinader, 100, null],
+          [(emp.objetivos.find(o=>/kpi.*costo|costo.*ingreso/i.test(o.texto))||{}).texto || 'KPI costo e ingreso', pKpiCosto, 100, null]
         ];
-        return filas.map(([texto,av,mt],i)=>{
+        emp.objetivos
+          .filter(o=>!/trazabilidad|sinader|kpi.*costo|costo.*ingreso|valorizaci/i.test(o.texto))
+          .forEach(o=>{ filas.push([o.texto, o.avance, null, o.ok]); });
+
+        return filas.map(([texto,av,mt,okDirecto],i)=>{
           const avN = av??0;
-          const ok = av!==null && mt!==null && avN>=mt;
+          // ok: true/false directo del backend (objetivos reales) si viene, si
+          // no se calcula comparando avance vs meta (Trazabilidad/SINADER/KPI
+          // costo, calculados en vivo más arriba); sinDato cuando no hay
+          // ningún veredicto posible (avance null y sin ok directo).
+          const sinDato = (okDirecto===true||okDirecto===false) ? false : (av===null || mt===null);
+          const ok = (okDirecto===true||okDirecto===false) ? okDirecto : (!sinDato && avN>=mt);
           return '<tr class="'+(i%2?'even':'')+'">'
             +'<td style="padding:5px 8px;border-bottom:1px solid #F2F4F7;font-weight:500;">'+texto+'</td>'
             +'<td style="padding:5px;text-align:center;border-bottom:1px solid #F2F4F7;">'+(mt===null?'—':mt+'%')+'</td>'
             +'<td style="padding:5px;text-align:center;border-bottom:1px solid #F2F4F7;font-weight:700;color:'+(av===null?'#98A2B3':colorPct(avN))+'">'+(av===null?'—':avN+'%')+'</td>'
-            +'<td style="padding:5px;text-align:center;border-bottom:1px solid #F2F4F7;color:'+(av===null||mt===null?'#98A2B3':ok?'#039855':'#F04438')+';font-weight:700;">'+(av===null||mt===null?'— Sin dato':ok?'✓ Cumplido':'✗ Pendiente')+'</td>'
+            +'<td style="padding:5px;text-align:center;border-bottom:1px solid #F2F4F7;color:'+(sinDato?'#98A2B3':ok?'#039855':'#F04438')+';font-weight:700;">'+(sinDato?'— Sin dato':ok?'✓ Cumplido':'✗ Pendiente')+'</td>'
             +'</tr>';
         }).join('');
       })()
