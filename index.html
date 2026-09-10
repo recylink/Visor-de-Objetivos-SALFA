@@ -884,21 +884,30 @@ function cellA(v, mes){
   return `<span class="cell-na2">—</span>`; // null = no aplica
 }
 
-function dotCSE(v, mes){
-  if(esFuturo(mes)) return `<div class="cse-dot dot-fut">·</div>`;
-  if(v===true)  return `<div class="cse-dot dot-ok">✓</div>`;
-  if(v===false) return `<div class="cse-dot dot-no">✗</div>`;
-  return `<div class="cse-dot dot-na">—</div>`;
-}
-
 // ---------- Seguimiento CSE editable (Correo / Reunión) ----------
 const CSE_ACCION_TXT = { correo: "Correo seguimiento", reunion: "Reunión seguimiento" };
+
+// FIX (2026-09-10, a pedido del usuario: "quiero que en todos los visores
+// se aplique esta lógica" — mismo fix ya aplicado en seguimiento-Euro):
+// esFuturo(mes) compara contra MESES_ACTIVOS, que sube cuando SUCEDE
+// cualquiera de trazabilidad/valorización/CSE (ver calcularMesesActivos_
+// en el backend) — pero para el mes en curso, si todavía no llegó NINGUNO
+// de esos 3 (ej. aún no se sube el Excel del mes y nadie ha marcado nada
+// de CSE), MESES_ACTIVOS se queda en el mes anterior y bloquea la
+// posibilidad de marcar CSE por primera vez ese mes. cseEsFuturo() usa la
+// fecha real de hoy en vez de MESES_ACTIVOS, así que Seguimiento CSE queda
+// independiente de si ya se cargaron o no datos de residuos ese mes.
+function cseEsFuturo(mes){
+  const hoy = new Date();
+  return MESES.indexOf(mes) > hoy.getMonth(); // getMonth() es 0-indexado (Enero=0)
+}
+
 let cseDirtyEmpIds = new Set();
 let cseAutoSaveTimer = null;
 const CSE_AUTOSAVE_DELAY_MS = 1500;
 
 function dotCSEEditable(emp, key, mes){
-  if(esFuturo(mes)) return `<div class="cse-dot dot-fut">·</div>`;
+  if(cseEsFuturo(mes)) return `<div class="cse-dot dot-fut">·</div>`;
   const v = emp.cse[key][mes];
   const cls = v===true ? "dot-ok" : v===false ? "dot-no" : "dot-na";
   const txt = v===true ? "✓" : v===false ? "✗" : "—";
@@ -1404,7 +1413,7 @@ function renderCSE(emp, modo){
 
   // % solo sobre correo y reunión
   let ok=0, tot=0;
-  MESES_ACTIVOS.filter(m=>!esFuturo(m)).forEach(m=>{
+  MESES.filter(m=>!cseEsFuturo(m)).forEach(m=>{
     keys.forEach(({key})=>{
       const v=emp.cse[key][m];
       if(v===null||v===undefined) return;
@@ -1415,7 +1424,7 @@ function renderCSE(emp, modo){
 
   // Tabla compacta: una fila de meses como encabezado, una fila por acción
   const thMeses = meses.map(m=>
-    `<th style="text-align:center;padding:4px 6px;font-size:9px;font-weight:700;color:${esFuturo(m)?'var(--g300)':m===mesActual?'var(--brand)':'var(--g400)'};white-space:nowrap;min-width:28px;">${m.slice(0,3)}</th>`
+    `<th style="text-align:center;padding:4px 6px;font-size:9px;font-weight:700;color:${cseEsFuturo(m)?'var(--g300)':m===mesActual?'var(--brand)':'var(--g400)'};white-space:nowrap;min-width:28px;">${m.slice(0,3)}</th>`
   ).join("");
 
   return `
